@@ -3,8 +3,29 @@ import dash_core_components as dcc
 import dash_html_components as html
 import numpy as np
 import plotly.graph_objects as go
+import pandas as pd
+import plotly.express as px
 
 from database import fetch_all_bpa_as_df
+
+from matplotlib import pyplot as plt
+
+
+## READ COVID DATA FROM OWID REPO
+data_url = 'https://github.com/owid/covid-19-data/raw/master/public/data/latest/owid-covid-latest.csv'
+df_cov = pd.read_csv(data_url)
+
+## Determining if feature is continuous
+THRESH = 0.01
+def is_cont(data, cat_name):
+    if data[cat_name].dtype != 'int64':
+        return False
+    if data[cat_name].nunique() / data[cat_name].count() < THRESH:
+        return False
+    return True
+    
+
+
 
 # Definitions of constants. This projects uses extra CSS stylesheet at `./assets/style.css`
 COLORS = ['rgb(67,67,67)', 'rgb(115,115,115)', 'rgb(49,130,189)', 'rgb(189,189,189)']
@@ -161,17 +182,34 @@ def architecture_summary():
     ], className='row')
 
 
+def target_vis():
+    return html.Div(children=[
+        html.Div(children=[
+            html.H2(children='Target Variable Visualization'),
+            dcc.Dropdown(
+                id='regressor_feature',
+                options=[{'label': col, 'value': col} for col in df_cov.columns],
+                multi=False,
+                placeholder='Feature to Plot Over'
+            ),
+            html.Div(children=[
+                dcc.Graph(id='target_var_fig')], className='EDA'),
+        ])
+    ], className='row')
+
+
 # Sequentially add page components to the app's layout
 def dynamic_layout():
     return html.Div([
-        page_header(),
-        html.Hr(),
-        description(),
+        target_vis(),
+        # page_header(),
+        # html.Hr(),
+        # description(),
         # dcc.Graph(id='trend-graph', figure=static_stacked_trend_graph(stack=False)),
-        dcc.Graph(id='stacked-trend-graph', figure=static_stacked_trend_graph(stack=True)),
-        what_if_description(),
-        what_if_tool(),
-        architecture_summary(),
+        # dcc.Graph(id='stacked-trend-graph', figure=static_stacked_trend_graph(stack=True)),
+        # what_if_description(),
+        # what_if_tool(),
+        # architecture_summary(),
     ], className='row', id='content')
 
 
@@ -182,43 +220,62 @@ app.layout = dynamic_layout
 # Defines the dependencies of interactive components
 
 @app.callback(
-    dash.dependencies.Output('wind-scale-text', 'children'),
-    [dash.dependencies.Input('wind-scale-slider', 'value')])
-def update_wind_sacle_text(value):
-    """Changes the display text of the wind slider"""
-    return "Wind Power Scale {:.2f}x".format(value)
+    dash.dependencies.Output('target_var_fig', 'figure'),
+    dash.dependencies.Input('regressor_feature', 'value')
+)
+def update_target_visualization(feature_name):
+    if feature_name != None:
+        target_var = 'new_cases'
+        if feature_name != target_var and df_cov[feature_name].dtype == 'float64':
+            fig = None
+            if is_cont(df_cov, feature_name):
+                fig = px.scatter(df_cov, x=feature_name, y=target_var, 
+                                 title=f"Visualizing {target_var} over {feature_name}")
+            else:
+                fig = px.box(df_cov, x = feature_name, y= target_var,
+                             title=f"Visualizing {target_var} over {feature_name}")
+            return fig
+    
+
+# @app.callback(
+#     dash.dependencies.Output('wind-scale-text', 'children'),
+#     [dash.dependencies.Input('wind-scale-slider', 'value')])
+# def update_wind_sacle_text(value):
+#     """Changes the display text of the wind slider"""
+#     return "Wind Power Scale {:.2f}x".format(value)
 
 
-@app.callback(
-    dash.dependencies.Output('hydro-scale-text', 'children'),
-    [dash.dependencies.Input('hydro-scale-slider', 'value')])
-def update_hydro_sacle_text(value):
-    """Changes the display text of the hydro slider"""
-    return "Hydro Power Scale {:.2f}x".format(value)
+# @app.callback(
+#     dash.dependencies.Output('hydro-scale-text', 'children'),
+#     [dash.dependencies.Input('hydro-scale-slider', 'value')])
+# def update_hydro_sacle_text(value):
+#     """Changes the display text of the hydro slider"""
+#     return "Hydro Power Scale {:.2f}x".format(value)
 
 
 
-@app.callback(
-    dash.dependencies.Output('what-if-figure', 'figure'),
-    [dash.dependencies.Input('wind-scale-slider', 'value'),
-     dash.dependencies.Input('hydro-scale-slider', 'value')])
-def what_if_handler(wind, hydro):
-    """Changes the display graph of supply-demand"""
-    df = fetch_all_bpa_as_df(allow_cached=True)
-    x = df['Datetime']
-    supply = df['Wind'] * wind + df['Hydro'] * hydro + df['Fossil/Biomass'] + df['Nuclear']
-    load = df['Load']
+# @app.callback(
+#     dash.dependencies.Output('what-if-figure', 'figure'),
+#     [dash.dependencies.Input('wind-scale-slider', 'value'),
+#      dash.dependencies.Input('hydro-scale-slider', 'value')])
+# def what_if_handler(wind, hydro):
+#     """Changes the display graph of supply-demand"""
+#     df = fetch_all_bpa_as_df(allow_cached=True)
+#     x = df['Datetime']
+#     supply = df['Wind'] * wind + df['Hydro'] * hydro + df['Fossil/Biomass'] + df['Nuclear']
+#     load = df['Load']
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x, y=supply, mode='none', name='supply', line={'width': 2, 'color': 'pink'},
-                  fill='tozeroy'))
-    fig.add_trace(go.Scatter(x=x, y=load, mode='none', name='demand', line={'width': 2, 'color': 'orange'},
-                  fill='tonexty'))
-    fig.update_layout(template='plotly_dark', title='Supply/Demand after Power Scaling',
-                      plot_bgcolor='#23272c', paper_bgcolor='#23272c', yaxis_title='MW',
-                      xaxis_title='Date/Time')
-    return fig
+#     fig = go.Figure()
+#     fig.add_trace(go.Scatter(x=x, y=supply, mode='none', name='supply', line={'width': 2, 'color': 'pink'},
+#                   fill='tozeroy'))
+#     fig.add_trace(go.Scatter(x=x, y=load, mode='none', name='demand', line={'width': 2, 'color': 'orange'},
+#                   fill='tonexty'))
+#     fig.update_layout(template='plotly_dark', title='Supply/Demand after Power Scaling',
+#                       plot_bgcolor='#23272c', paper_bgcolor='#23272c', yaxis_title='MW',
+#                       xaxis_title='Date/Time')
+#     return fig
 
 
 if __name__ == '__main__':
     app.run_server(debug=True, port=1050, host='0.0.0.0')
+
