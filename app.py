@@ -18,7 +18,7 @@ df_cov = pd.read_csv(data_url)
 ## Determining if feature is continuous
 THRESH = 0.01
 def is_cont(data, cat_name):
-    if data[cat_name].dtype != 'int64':
+    if data[cat_name].dtype != 'float64':
         return False
     if data[cat_name].nunique() / data[cat_name].count() < THRESH:
         return False
@@ -190,10 +190,11 @@ def target_vis():
                 id='regressor_feature',
                 options=[{'label': col, 'value': col} for col in df_cov.columns],
                 multi=False,
-                placeholder='Feature to Plot Over'
+                placeholder='Feature to Plot Over',
+                value=df_cov.columns[0]
             ),
             html.Div(children=[
-                dcc.Graph(id='target_var_fig')], className='EDA'),
+                dcc.Graph(id='target_var_fig')]),
         ])
     ], className='row')
 
@@ -224,17 +225,21 @@ app.layout = dynamic_layout
     dash.dependencies.Input('regressor_feature', 'value')
 )
 def update_target_visualization(feature_name):
-    if feature_name != None:
-        target_var = 'new_cases'
-        if feature_name != target_var and df_cov[feature_name].dtype == 'float64':
-            fig = None
-            if is_cont(df_cov, feature_name):
-                fig = px.scatter(df_cov, x=feature_name, y=target_var, 
-                                 title=f"Visualizing {target_var} over {feature_name}")
-            else:
-                fig = px.box(df_cov, x = feature_name, y= target_var,
-                             title=f"Visualizing {target_var} over {feature_name}")
-            return fig
+    # if feature_name != None:
+    target_var = 'new_cases'
+    fig = None
+    if feature_name != target_var:
+        if is_cont(df_cov, feature_name):
+            fig = px.scatter(df_cov, x=feature_name, y=target_var, 
+                             title=f"Scatter {target_var} over {feature_name}")
+        else:
+            fig = px.bar(df_cov, x = feature_name, y= target_var,
+                         title=f"BoxPlot {target_var} over {feature_name}")
+
+    fig.update_layout(template='plotly_dark', title='Supply/Demand after Power Scaling',
+                          plot_bgcolor='#23272c', paper_bgcolor='#23272c', yaxis_title='MW',
+                          xaxis_title='Date/Time')
+    return fig
     
 
 # @app.callback(
@@ -277,5 +282,5 @@ def update_target_visualization(feature_name):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True, port=1050, host='0.0.0.0')
+    app.run_server(debug=True, port=1051, host='0.0.0.0')
 
