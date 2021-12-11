@@ -5,10 +5,71 @@ import numpy as np
 import plotly.graph_objects as go
 import pandas as pd
 import plotly.express as px
-
 from database import fetch_all_bpa_as_df
-
 from matplotlib import pyplot as plt
+import psycopg2
+from psycopg2 import OperationalError
+import pandas as pd
+import pandas.io.sql as sqlio
+
+def create_connection(db_name, db_user, db_password, db_host, db_port):
+    connection = None
+    try:
+        connection = psycopg2.connect(
+            database=db_name,
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port,
+        )
+        print("Connection to PostgreSQL DB successful")
+    except OperationalError as e:
+        print(f"The error '{e}' occurred")
+    return connection
+
+
+#heroku connection
+connection = create_connection(
+    "dcegl8mv856qb8", "ndvqpnrwxtmwvu", "eec515b7f7a6c5c44d4df10499aa344d698310c1b39474bd2aefca27633fb241", "ec2-3-89-214-80.compute-1.amazonaws.com", "5432"
+)
+
+#show all tables in db 
+cursor = connection.cursor()
+cursor.execute("select relname from pg_class where relkind='r' and relname !~ '^(pg_|sql_)';")
+cursor.fetchall()
+
+# extract raw data from Jonh's Hopkins Repo
+df_covid = pd.read_csv('https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv')
+
+# specify table name
+table_name = "covid"
+
+try:
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+    create_table_query = f"CREATE TABLE {table_name} ("
+    create_table_query += ", ".join([col + (" double precision" if df_covid.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(df_covid.columns)]) + ");"
+    cursor.execute(create_table_query)
+
+except Exception as e:
+    print(e)
+    
+for i in range(df_covid.shape[0]):
+    row_list = df_covid.iloc[i].tolist()
+    str_row = [str(f) for f in row_list]
+    str_row = ["NULL" if s == 'nan' else s for s in str_row]
+    insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in df_covid.columns])})"
+    try:
+#         cursor.execute(insert_query)
+        cursor.execute(insert_p1, df_covid.iloc[i].tolist())
+       
+    except Exception as e:
+        print(e)
+    
+
+#convert sql data into pandas df
+sql = "SELECT * from covid;"
+df_cov = sqlio.read_sql_query(sql, connection)
+print(df_cov.head(10))
 
 
 ## READ COVID DATA FROM OWID REPO
@@ -24,8 +85,6 @@ def is_cont(data, cat_name):
         return False
     return True
     
-
-
 
 # Definitions of constants. This projects uses extra CSS stylesheet at `./assets/style.css`
 COLORS = ['rgb(67,67,67)', 'rgb(115,115,115)', 'rgb(49,130,189)', 'rgb(189,189,189)']
