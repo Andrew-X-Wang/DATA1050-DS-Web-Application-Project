@@ -57,28 +57,28 @@ df_covid = df_cov
 # specify table name
 table_name = "covid"
 
-try:
-    cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
-    create_table_query = f"CREATE TABLE {table_name} ("
-    create_table_query += ", ".join([col + (" double precision" if df_covid.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(df_covid.columns)]) + ");"
-    cursor.execute(create_table_query)
+# try:
+#     cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+#     create_table_query = f"CREATE TABLE {table_name} ("
+#     create_table_query += ", ".join([col + (" double precision" if df_covid.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(df_covid.columns)]) + ");"
+#     cursor.execute(create_table_query)
 
-except Exception as e:
-    print(e)
+# except Exception as e:
+#     print(e)
     
-for i in range(df_covid.shape[0]):
-    row_list = df_covid.iloc[i].tolist()
-    str_row = [str(f) for f in row_list]
-    str_row = ["NULL" if s == 'nan' else s for s in str_row]
-    insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in df_covid.columns])})"
-    try:
-#         cursor.execute(insert_query)
-        cursor.execute(insert_p1, df_covid.iloc[i].tolist())
+# for i in range(df_covid.shape[0]):
+#     row_list = df_covid.iloc[i].tolist()
+#     str_row = [str(f) for f in row_list]
+#     str_row = ["NULL" if s == 'nan' else s for s in str_row]
+#     insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in df_covid.columns])})"
+#     try:
+# #         cursor.execute(insert_query)
+#         cursor.execute(insert_p1, df_covid.iloc[i].tolist())
        
-    except Exception as e:
-        print(e)
+#     except Exception as e:
+#         print(e)
 
-connection.commit()
+# connection.commit()
 
 sql = "SELECT * from covid;"
 df_cov = sqlio.read_sql_query(sql, connection)
@@ -94,28 +94,28 @@ covid_historical_df = covid_historical_df.head(10)
 #new table name
 table_name = "CovidHistorical"
 
-try:
-    cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
-    create_table_query = f"CREATE TABLE {table_name} ("
-    create_table_query += ", ".join([col + (" double precision" if covid_historical_df.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(covid_historical_df.columns)]) + ");"
-    cursor.execute(create_table_query)
+# try:
+#     cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+#     create_table_query = f"CREATE TABLE {table_name} ("
+#     create_table_query += ", ".join([col + (" double precision" if covid_historical_df.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(covid_historical_df.columns)]) + ");"
+#     cursor.execute(create_table_query)
 
-except Exception as e:
-    print(e)
+# except Exception as e:
+#     print(e)
     
-for i in range(covid_historical_df.shape[0]):
-    row_list = covid_historical_df.iloc[i].tolist()
-    str_row = [str(f) for f in row_list]
-    str_row = ["NULL" if s == 'nan' else s for s in str_row]
-    insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in covid_historical_df.columns])})"
-    try:
-#         cursor.execute(insert_query)
-        cursor.execute(insert_p1, covid_historical_df.iloc[i].tolist())
+# for i in range(covid_historical_df.shape[0]):
+#     row_list = covid_historical_df.iloc[i].tolist()
+#     str_row = [str(f) for f in row_list]
+#     str_row = ["NULL" if s == 'nan' else s for s in str_row]
+#     insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in covid_historical_df.columns])})"
+#     try:
+# #         cursor.execute(insert_query)
+#         cursor.execute(insert_p1, covid_historical_df.iloc[i].tolist())
        
-    except Exception as e:
-        print(e)
+#     except Exception as e:
+#         print(e)
 
-connection.commit()
+# connection.commit()
 
 sql = "SELECT * from CovidHistorical;"
 df_hist = sqlio.read_sql_query(sql, connection)
@@ -197,11 +197,18 @@ def history_compare():
         html.Div(children=[
             html.H2("Historical Comparison"),
             dcc.Dropdown(
-                id='date_to_compare_dd',
+                id='locations_to_compare_dd',
+                options=[{'label': d, 'value': d} for d in df_hist['location'].unique()],
+                multi=True,
+                placeholder='Locations to Compare',
+                value=[df_hist.iloc[0]['location']]
+            ),
+            dcc.Dropdown(
+                id='dates_to_compare_dd',
                 options=[{'label': d, 'value': d} for d in df_hist['date'].unique()],
-                multi=False,
-                placeholder='Date to Compare To',
-                value=df_hist.iloc[0]['date'] # put in db_info?
+                multi=True,
+                placeholder='Dates to Compare To',
+                value=[df_hist['date'].min()] # put in db_info?
             ),
             dcc.Dropdown(
                 id='feats_to_compare_dd',
@@ -290,19 +297,33 @@ def update_timeline_vis(plot_feature, filter_feature, filter_value):
 # Updating Historical Comparison Visualization
 @app.callback(
     dash.dependencies.Output('hist_comparison_fig', 'figure'),
-    [dash.dependencies.Input('date_to_compare_dd', 'value'),
+    [dash.dependencies.Input('locations_to_compare_dd', 'value'),
+     dash.dependencies.Input('dates_to_compare_dd', 'value'),
      dash.dependencies.Input('feats_to_compare_dd', 'value')]
 )
-def update_history_compare_vis(hist_date, features):
-    print("FEATURES:")
-    print(features)
-    # Historical DF to compare to
-    hist_date_mask = df_hist['date'] == hist_date
-    df_hist_date = df_hist[df_hist['date']==hist_date]
+def update_history_compare_vis(locations, hist_dates, features):
+    # Date Mask
+    dummy_date = '0000-01-01'
+    hist_date_mask = df_hist['date'] == dummy_date # Should be all False
+    for hist_date in hist_dates:
+        curr_date_mask = df_hist['date'] == hist_date
+        hist_date_mask = [has_date_c or has_date_h for has_date_c, has_date_h in zip(curr_date_mask, hist_date_mask)]
+
+    df_hist_date = df_hist[hist_date_mask]
+
+    # Location Mask
+    dummy_loc = 'Roshar'
+    hist_loc_mask = df_hist_date['location'] == dummy_loc
+    for loc in locations:
+        curr_loc_mask = df_hist_date['location'] == loc
+        hist_loc_mask = [has_loc_c or has_loc_h for has_loc_c, has_loc_h in zip(curr_loc_mask, hist_loc_mask)]
+
+    # Combined Filtered DF
+    df_hist_filtered = df_hist_date[hist_loc_mask]
 
     # Concatenating historical and latest DF
     df_cov_new = df_cov.rename(columns = {'last_updated_date':'date'})
-    df_compare = pd.concat([df_cov_new, df_hist_date], sort=False).reset_index()
+    df_compare = pd.concat([df_cov_new, df_hist_filtered], sort=False).reset_index()
 
     feats_to_plot = ['date', 'location'] + features
     df_compare = df_compare[feats_to_plot]
@@ -313,6 +334,7 @@ def update_history_compare_vis(hist_date, features):
     df_total['feature_val'] = None
     for f in features:
         feats_to_remove = set(features).difference(set([f]))
+        # Rename f to 'feature_val', drop rest of features from DF
         df_new = df_compare.rename(columns={f:'feature_val'}).drop(feats_to_remove, axis=1)
         df_new['feature'] = f
         df_total = pd.concat([df_total, df_new])
@@ -326,10 +348,10 @@ def update_history_compare_vis(hist_date, features):
     signs = np.random.randint(3, size=(df_total.shape[0], 3))
 
     # By location (@TODO: make location a dropdown option as well)
-    for i, loc in enumerate(df_total['location'].unique()):
+    for i, loc in enumerate(locations):
         df_row = df_total[df_total['location']==loc]
-        # print("DF ROW")
-        # print(df_row)
+        print("DF ROW")
+        print(df_row)
         rgb_i = [(c + signs[i, j] * i * 15)%256 for j, c in enumerate(rgb)]
         # if df_total.iloc[i]['date'] >= '2021-12-10' or df_total.iloc[i]['date'] == '2020-06-03': # @TODO: change latest date
         fig.add_trace(go.Bar(x=[df_row.feature, df_row.date],
