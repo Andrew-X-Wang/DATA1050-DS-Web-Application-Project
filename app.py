@@ -38,6 +38,8 @@ cursor = connection.cursor()
 cursor.execute("select relname from pg_class where relkind='r' and relname !~ '^(pg_|sql_)';")
 cursor.fetchall()
 
+# ------------ Latest Covid Data --------------
+
 # extract raw data from Jonh's Hopkins Repo
 df_covid = pd.read_csv('https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv')
 
@@ -72,6 +74,41 @@ df_cov = sqlio.read_sql_query(sql, connection)
 print(df_cov.head(10))
 
 
+
+# ------------ Historical Covid Data --------------
+
+# historical table data from git
+covid_historical_df = pd.read_csv('https://covid.ourworldindata.org/data/owid-covid-data.csv')
+
+#new table name
+table_name = "CovidHistorical"
+
+try:
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+    create_table_query = f"CREATE TABLE {table_name} ("
+    create_table_query += ", ".join([col + (" double precision" if covid_historical_df.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(covid_historical_df.columns)]) + ");"
+    cursor.execute(create_table_query)
+
+except Exception as e:
+    print(e)
+    
+for i in range(covid_historical_df.shape[0]):
+    row_list = covid_historical_df.iloc[i].tolist()
+    str_row = [str(f) for f in row_list]
+    str_row = ["NULL" if s == 'nan' else s for s in str_row]
+    insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in covid_historical_df.columns])})"
+    try:
+#         cursor.execute(insert_query)
+        cursor.execute(insert_p1, covid_historical_df.iloc[i].tolist())
+       
+    except Exception as e:
+        print(e)
+    
+sql = "SELECT * from CovidHistorical;"
+historical_covid_df = sqlio.read_sql_query(sql, connection)
+# print(historical_covid_df.head(10))
+
+
 ## READ COVID DATA FROM OWID REPO
 data_url = 'https://github.com/owid/covid-19-data/raw/master/public/data/latest/owid-covid-latest.csv'
 df_cov = pd.read_csv(data_url)
@@ -95,8 +132,6 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 
 # Define component functions
-
-
 def page_header():
     """
     Returns the page header as a dash `html.Div`
