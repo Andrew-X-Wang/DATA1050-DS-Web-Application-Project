@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import pandas.io.sql as sqlio
-
 import psycopg2
 from psycopg2 import OperationalError
 
@@ -19,8 +18,6 @@ latest_feats = df_cov.columns
 hist_url = 'https://covid.ourworldindata.org/data/owid-covid-data.csv'
 df_hist = pd.read_csv(hist_url)
 hist_feats = df_hist.columns
-
-
 
 
 def create_connection(db_name, db_user, db_password, db_host, db_port):
@@ -54,8 +51,8 @@ print(cursor.fetchall())
 # ------------ Latest Covid Data --------------
 
 # extract raw data from Jonh's Hopkins Repo
-'''
-df_covid = pd.read_csv('https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv')
+
+df_covid = df_cov
 
 # specify table name
 table_name = "covid"
@@ -80,20 +77,19 @@ for i in range(df_covid.shape[0]):
        
     except Exception as e:
         print(e)
-'''
 
-#convert sql data into pandas df
-# sql = "SELECT * from covid;"
-# df_cov = sqlio.read_sql_query(sql, connection)
-# print(df_cov.head(10))
+connection.commit()
 
+sql = "SELECT * from covid;"
+df_cov = sqlio.read_sql_query(sql, connection)
+print(df_cov.head(10))
 
 
 # ------------ Historical Covid Data --------------
 
 # historical table data from git
-'''
-covid_historical_df = pd.read_csv('https://covid.ourworldindata.org/data/owid-covid-data.csv')
+covid_historical_df = df_hist
+covid_historical_df = covid_historical_df.head(10)
 
 #new table name
 table_name = "CovidHistorical"
@@ -118,13 +114,14 @@ for i in range(covid_historical_df.shape[0]):
        
     except Exception as e:
         print(e)
-'''
 
-# sql = "SELECT * from CovidHistorical;"
-# df_hist = sqlio.read_sql_query(sql, connection)
+connection.commit()
+
+sql = "SELECT * from CovidHistorical;"
+df_hist = sqlio.read_sql_query(sql, connection)
+connection.close()
 # print("Read from DB")
-# print(historical_covid_df.head(10))
-
+print(df_hist.head(10))
 
 
 ## Determining if feature is continuous
