@@ -43,7 +43,8 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 # Define component functions
 def target_vis():
-    df_cov = get_covid('covid')
+    global CONN
+    df_cov = get_covid(CONN, 'covid')
 
     return html.Div(children=[
         html.Div(children=[
@@ -62,7 +63,8 @@ def target_vis():
 
 
 def timeline_vis():
-    df_hist = get_covid('covidhistorical')
+    global CONN
+    df_hist = get_covid(CONN, 'covidhistorical')
     hist_feats = df_hist.columns
 
     return html.Div(children=[
@@ -97,7 +99,8 @@ def timeline_vis():
 
 
 def history_compare():
-    df_hist = get_covid('covidhistorical')
+    global CONN
+    df_hist = get_covid(CONN, 'covidhistorical')
     hist_feats = df_hist.columns
 
     return html.Div(children=[
@@ -122,7 +125,7 @@ def history_compare():
                 options=[{'label': f, 'value': f} for f in hist_feats],
                 multi=True,
                 placeholder='Features to Compare',
-                value=['new_tests', 'new_cases']
+                value=['new_tests_smoothed', 'new_cases']
             ),
             html.Div(children=[
                 dcc.Graph(id='hist_comparison_fig')
@@ -133,6 +136,11 @@ def history_compare():
 
 # Sequentially add page components to the app's layout
 def dynamic_layout():
+    global CONN
+    CONN = create_connection(
+        "dcegl8mv856qb8", "ndvqpnrwxtmwvu", "eec515b7f7a6c5c44d4df10499aa344d698310c1b39474bd2aefca27633fb241", "ec2-3-89-214-80.compute-1.amazonaws.com", "5432"
+    )
+
     return html.Div([
         timeline_vis(),
         target_vis(),
@@ -153,7 +161,8 @@ app.layout = dynamic_layout
     dash.dependencies.Input('regressor_feature_dd', 'value')
 )
 def update_target_visualization(feature_name):
-    df_cov = get_covid('covid')
+    global CONN
+    df_cov = get_covid(CONN, 'covid')
 
     # if feature_name != None:
     target_var = 'new_cases_smoothed'
@@ -178,6 +187,9 @@ def update_target_visualization(feature_name):
     dash.dependencies.Input('hist_filter_feat_dd', 'value')
 )
 def update_filter_val_options(filter_feat):
+    global CONN    
+    df_hist = get_covid(CONN, 'covidhistorical')
+
     not_null_mask = df_hist[filter_feat].notnull()
     unique_vals = df_hist[filter_feat][not_null_mask].unique()
     options = [{'label': val, 'value': val} for val in unique_vals]
@@ -192,7 +204,9 @@ def update_filter_val_options(filter_feat):
      dash.dependencies.Input('hist_filter_val_dd', 'value')]
 )
 def update_timeline_vis(plot_feature, filter_feature, filter_value):
-    df_hist = get_covid('covidhistorical')
+    global CONN
+    df_hist = get_covid(CONN, 'covidhistorical')
+
     hist_time_feature = 'date' # can put in db_info
     hist_filter_mask = df_hist[filter_feature] == filter_value
     df_hist_filtered = df_hist[hist_filter_mask]
@@ -213,8 +227,9 @@ def update_timeline_vis(plot_feature, filter_feature, filter_value):
      dash.dependencies.Input('feats_to_compare_dd', 'value')]
 )
 def update_history_compare_vis(locations, hist_dates, features):
-    df_cov = get_covid('covid')
-    df_hist = get_covid('covid_historical')
+    global CONN
+    df_cov = get_covid(CONN, 'covid')
+    df_hist = get_covid(CONN, 'covidhistorical')
     
     # Date Mask
     dummy_date = '0000-01-01'
@@ -283,5 +298,6 @@ def update_history_compare_vis(locations, hist_dates, features):
 
     return fig
 
+CONN = None
 if __name__ == '__main__':
     app.run_server(debug=True, port=1050, host='0.0.0.0')
