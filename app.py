@@ -10,7 +10,8 @@ import psycopg2
 from psycopg2 import OperationalError
 
 
-## READ COVID DATA FROM OWID REPO
+# ## READ COVID DATA FROM OWID REPO
+# @TODO: Comment out later
 latest_url = 'https://github.com/owid/covid-19-data/raw/master/public/data/latest/owid-covid-latest.csv'
 df_cov = pd.read_csv(latest_url)
 latest_feats = df_cov.columns
@@ -19,109 +20,6 @@ hist_url = 'https://covid.ourworldindata.org/data/owid-covid-data.csv'
 df_hist = pd.read_csv(hist_url)
 hist_feats = df_hist.columns
 
-
-def create_connection(db_name, db_user, db_password, db_host, db_port):
-    connection = None
-    try:
-        connection = psycopg2.connect(
-            database=db_name,
-            user=db_user,
-            password=db_password,
-            host=db_host,
-            port=db_port,
-        )
-        print("Connection to PostgreSQL DB successful")
-    except OperationalError as e:
-        print(f"The error '{e}' occurred")
-    return connection
-
-
-#heroku connection
-connection = create_connection(
-    "dcegl8mv856qb8", "ndvqpnrwxtmwvu", "eec515b7f7a6c5c44d4df10499aa344d698310c1b39474bd2aefca27633fb241", "ec2-3-89-214-80.compute-1.amazonaws.com", "5432"
-)
-
-
-#show all tables in db 
-cursor = connection.cursor()
-cursor.execute("select relname from pg_class where relkind='r' and relname !~ '^(pg_|sql_)';")
-print(cursor.fetchall())
-
-
-# ------------ Latest Covid Data --------------
-
-# extract raw data from Jonh's Hopkins Repo
-
-df_covid = df_cov
-
-# specify table name
-table_name = "covid"
-
-# try:
-#     cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
-#     create_table_query = f"CREATE TABLE {table_name} ("
-#     create_table_query += ", ".join([col + (" double precision" if df_covid.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(df_covid.columns)]) + ");"
-#     cursor.execute(create_table_query)
-
-# except Exception as e:
-#     print(e)
-    
-# for i in range(df_covid.shape[0]):
-#     row_list = df_covid.iloc[i].tolist()
-#     str_row = [str(f) for f in row_list]
-#     str_row = ["NULL" if s == 'nan' else s for s in str_row]
-#     insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in df_covid.columns])})"
-#     try:
-# #         cursor.execute(insert_query)
-#         cursor.execute(insert_p1, df_covid.iloc[i].tolist())
-       
-#     except Exception as e:
-#         print(e)
-
-# connection.commit()
-
-sql = "SELECT * from covid;"
-df_cov = sqlio.read_sql_query(sql, connection)
-print(df_cov.head(10))
-
-
-# ------------ Historical Covid Data --------------
-
-# historical table data from git
-covid_historical_df = df_hist
-covid_historical_df = covid_historical_df.head(10)
-
-#new table name
-table_name = "CovidHistorical"
-
-# try:
-#     cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
-#     create_table_query = f"CREATE TABLE {table_name} ("
-#     create_table_query += ", ".join([col + (" double precision" if covid_historical_df.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(covid_historical_df.columns)]) + ");"
-#     cursor.execute(create_table_query)
-
-# except Exception as e:
-#     print(e)
-    
-# for i in range(covid_historical_df.shape[0]):
-#     row_list = covid_historical_df.iloc[i].tolist()
-#     str_row = [str(f) for f in row_list]
-#     str_row = ["NULL" if s == 'nan' else s for s in str_row]
-#     insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(['%s' for i in covid_historical_df.columns])})"
-#     try:
-# #         cursor.execute(insert_query)
-#         cursor.execute(insert_p1, covid_historical_df.iloc[i].tolist())
-       
-#     except Exception as e:
-#         print(e)
-
-# connection.commit()
-
-sql = "SELECT * from CovidHistorical;"
-df_hist = sqlio.read_sql_query(sql, connection)
-connection.close()
-# print("Read from DB")
-print(df_hist.head(10))
 
 
 ## Determining if feature is continuous

@@ -4,62 +4,69 @@ Bonneville Power Administration, United States Department of Energy
 import time
 import sched
 import pandas
-import logging
-import requests
+# import logging
+# import requests
 from io import StringIO
 
-import utils
-from database import upsert_bpa
+# import utils
+import database
+from database import *
+
+TIMEOUT_PERIOD = 10 # seconds
+
+def db_health_check(connection, verbose=False):
+    health_status = DB_STATUS_CODES['Success']
+    tables = read_tables(connection, verbose)
+    
+    if 'covid' not in tables:
+        health_status = health_status | DB_STATUS_CODES['Missing covid table']
+    # Complete repopulation of 'covidhistorical' table if DNE, or not enough data in it
+    if ('covidhistorical' not in tables) or (select_count_from_table(connection, 'covidhistorical').iloc[0]['count'] < DB_LIMIT):
+        health_status = health_status | DB_STATUS_CODES['Missing both tables']
+    
+    return health_status
 
 
-BPA_SOURCE = "https://transmission.bpa.gov/business/operations/Wind/baltwg.txt"
-MAX_DOWNLOAD_ATTEMPT = 5
-DOWNLOAD_PERIOD = 10         # second
-logger = logging.Logger(__name__)
-utils.setup_logger(logger, 'data.log')
+def initial_db_setup(connection, df_covid_total, df_hist_total, health_status, verbose=False):
+    if health_status == DB_STATUS_CODES['Success']:
+        return health_status
+    
+    if health_status & DB_STATUS_CODES['Missing historical table']: # 2 if missing
+        repop_status = repopulate_table_complete(connection, df_hist_total, 'covidhistorical', verbose)
+        if select_count_from_table(connection, 'covidhistorical').iloc[0]['count'] < DB_LIMIT:
+            if verbose:
+                print("CovidHistorical table failed to have enough rows populated.")
+            repop_status = DB_STATUS_CODES['Failure']
+
+        if repop_status == DB_STATUS_CODES['Failure']:
+            return repop_status
+
+    if health_status & DB_STATUS_CODES['Missing covid table']: # 1 if missing
+        repopulate_table_complete(connection, df_covid_total, 'covid', verbose)
+        if repop_status == DB_STATUS_CODES['Failure']:
+            return repop_status
+    
+    if verbose:
+        hist_count = select_count_from_table(connection, 'covidhistorical').iloc[0]['count']
+        print(f"CovidHistorical Table populated with {hist_count} rows!")
+        print("Successful initial_db_setup.")
+    return DB_STATUS_CODES['Success']
 
 
-def download_bpa(url=BPA_SOURCE, retries=MAX_DOWNLOAD_ATTEMPT):
-    """Returns BPA text from `BPA_SOURCE` that includes power loads and resources
-    Returns None if network failed
-    """
-    text = None
-    for i in range(retries):
-        try:
-            req = requests.get(url, timeout=0.5)
-            req.raise_for_status()
-            text = req.text
-        except requests.exceptions.HTTPError as e:
-            logger.warning("Retry on HTTP Error: {}".format(e))
-    if text is None:
-        logger.error('download_bpa too many FAILED attempts')
-    return text
+def incremental_update(connection):
+    # Updates **only** the covid table incrementally
+    df_covid_total = read_csv('covid')
+
+    repopulate_table_complete(connection, df_covid_total, 'covid')
 
 
-def filter_bpa(text):
-    """Converts `text` to `DataFrame`, removes empty lines and descriptions
-    """
-    # use StringIO to convert string to a readable buffer
-    df = pandas.read_csv(StringIO(text), skiprows=11, delimiter='\t')
-    df.columns = df.columns.str.strip()             # remove space in columns name
-    df['Datetime'] = pandas.to_datetime(df['Date/Time'])
-    df.drop(columns=['Date/Time'], axis=1, inplace=True)
-    df.dropna(inplace=True)             # drop rows with empty cells
-    return df
 
-
-def update_once():
-    t = download_bpa()
-    df = filter_bpa(t)
-    upsert_bpa(df)
-
-
-def main_loop(timeout=DOWNLOAD_PERIOD):
+def main_loop(connection, timeout=TIMEOUT_PERIOD):
     scheduler = sched.scheduler(time.time, time.sleep)
 
     def _worker():
         try:
-            update_once()
+            incremental_update(connection)
         except Exception as e:
             logger.warning("main loop worker ignores exception and continues: {}".format(e))
         scheduler.enter(timeout, 1, _worker)    # schedule the next event
@@ -69,6 +76,20 @@ def main_loop(timeout=DOWNLOAD_PERIOD):
 
 
 if __name__ == '__main__':
-    main_loop()
+    #heroku connection
+    connection = create_connection(
+        "dcegl8mv856qb8", "ndvqpnrwxtmwvu", "eec515b7f7a6c5c44d4df10499aa344d698310c1b39474bd2aefca27633fb241", "ec2-3-89-214-80.compute-1.amazonaws.com", "5432"
+    )
+
+    df_covid_total = read_csv('covid')
+    df_hist_total = read_csv('covidhistorical')
+
+    db_health = db_health_check(connection)
+    print(db_health)
+    
+    ## @TODO: Initial DB Setup Not Working
+    # initial_db_setup(connection, df_covid_total, df_hist_total, db_health, verbose=True)
+
+    # main_loop(connection)
 
 

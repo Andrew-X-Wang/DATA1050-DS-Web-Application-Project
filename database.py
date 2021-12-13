@@ -1,69 +1,120 @@
-import logging
-import pymongo
-import pandas as pds
-import expiringdict
+import psycopg2
+from psycopg2 import OperationalError
+from pandas.io import sql as sqlio
 
-import utils
+from data_ETL import *
 
-client = pymongo.MongoClient()
-logger = logging.Logger(__name__)
-utils.setup_logger(logger, 'db.log')
-RESULT_CACHE_EXPIRATION = 10             # seconds
+DB_LIMIT = 9000 # max num of rows*0.9
 
+TABLE_NAMES = ['covid', 'covidhistorical']
 
-def upsert_bpa(df):
-    """
-    Update MongoDB database `energy` and collection `energy` with the given `DataFrame`.
-    """
-    db = client.get_database("energy")
-    collection = db.get_collection("energy")
-    update_count = 0
-    for record in df.to_dict('records'):
-        result = collection.replace_one(
-            filter={'Datetime': record['Datetime']},    # locate the document if exists
-            replacement=record,                         # latest document
-            upsert=True)                                # update if exists, insert if not
-        if result.matched_count > 0:
-            update_count += 1
-    logger.info("rows={}, update={}, ".format(df.shape[0], update_count) +
-                "insert={}".format(df.shape[0]-update_count))
+DB_STATUS_CODES = {
+    'Success': 0,
+    'Failure': -1,
+    'Missing covid table': 1,
+    'Missing historical table': 2,
+    'Missing both tables': 3
+}
 
 
-def fetch_all_bpa():
-    db = client.get_database("energy")
-    collection = db.get_collection("energy")
-    ret = list(collection.find())
-    logger.info(str(len(ret)) + ' documents read from the db')
-    return ret
+def create_connection(db_name, db_user, db_password, db_host, db_port):
+    connection = None
+    try:
+        connection = psycopg2.connect(
+            database=db_name,
+            user=db_user,
+            password=db_password,
+            host=db_host,
+            port=db_port,
+        )
+        print("Connection to PostgreSQL DB successful")
+    except OperationalError as e:
+        print(f"The error '{e}' occurred")
+    return connection
 
 
-_fetch_all_bpa_as_df_cache = expiringdict.ExpiringDict(max_len=1,
-                                                       max_age_seconds=RESULT_CACHE_EXPIRATION)
+def read_tables(connection, verbose=False):
+    #show all tables in db 
+    cursor = connection.cursor()
+    cursor.execute("select relname from pg_class where relkind='r' and relname !~ '^(pg_|sql_)';")
+    res = cursor.fetchall()
+
+    # Formatting: original eg. [('covid',), ('covidhistorical',)]
+    res = [r[0] for r in res]
+
+    if verbose:
+        print(res)
+
+    cursor.close()
+    return res
 
 
-def fetch_all_bpa_as_df(allow_cached=False):
-    """Converts list of dicts returned by `fetch_all_bpa` to DataFrame with ID removed
-    Actual job is done in `_worker`. When `allow_cached`, attempt to retrieve timed cached from
-    `_fetch_all_bpa_as_df_cache`; ignore cache and call `_work` if cache expires or `allow_cached`
-    is False.
-    """
-    def _work():
-        data = fetch_all_bpa()
-        if len(data) == 0:
-            return None
-        df = pds.DataFrame.from_records(data)
-        df.drop('_id', axis=1, inplace=True)
-        return df
+def select_all_from_table(connection, table_name, verbose=False):
+    sql = f"SELECT * from {table_name};"
+    df = sqlio.read_sql_query(sql, connection)
+    if verbose:
+        print(f"Table size: {df.shape}")
+        print(df_cov.head(10))
+    return df
 
-    if allow_cached:
+
+def select_count_from_table(connection, table_name, verbose=False):
+    sql = f"SELECT count(*) from {table_name};"
+    df = sqlio.read_sql_query(sql, connection)
+    if verbose:
+        print(df)
+    return df
+
+
+def create_table(connection, table_name, verbose=False):
+    cursor = connection.cursor()
+    try:
+        cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
+        create_table_query = f"CREATE TABLE {table_name} ("
+        features_types = [col + (" double precision" if df_covid.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(df.columns)]
+        create_table_query += ", ".join(features_types) + ");"
+        cursor.execute(create_table_query)
+
+    except Exception as e:
+        print(e)
+        return DB_STATUS_CODES['Failure']
+    
+    connection.commit()
+    if verbose:
+        print(f"Successfully created table {table_name}.")
+    cursor.close()
+    return DB_STATUS_CODES['Success']
+
+
+def repopulate_table_complete(connection, df_total, table_name, feat_to_limit='date', limit=DB_LIMIT, verbose=False):
+    create_table_status = create_table(connection, table_name)
+    if create_table_status == DB_STATUS_CODES['Failure']:
+        if verbose:
+            print(f"Failed to create table {table_name}")
+        return create_table_status
+
+    # Remove 'overly null' rows and columns
+    df_clean = clean_null_data(df_total, verbose=verbose)
+    # Limit to 9000 rows
+    df_clean = df_clean[-limit:]
+    
+    cursor = connection.cursor()
+    for i in range(df_clean.shape[0]):
+        if verbose:
+            if i % 100 == 0:
+                print(f"Inserting row {i}.")
+        row_list = df.iloc[i].tolist()
+        str_row = [str(f) for f in row_list]
+        str_row = ["NULL" if s == 'nan' else s for s in str_row]
+        str_placeholders = ['%s' for i in df.columns]
+        insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(str_placeholders)})"
         try:
-            return _fetch_all_bpa_as_df_cache['cache']
-        except KeyError:
-            pass
-    ret = _work()
-    _fetch_all_bpa_as_df_cache['cache'] = ret
-    return ret
+            cursor.execute(insert_p1, df.iloc[i].tolist())
+        
+        except Exception as e:
+            print(e)
+            return DB_STATUS_CODES['Failure']
 
-
-if __name__ == '__main__':
-    print(fetch_all_bpa_as_df())
+    connection.commit()
+    cursor.close()
+    return DB_STATUS_CODES['Success']
