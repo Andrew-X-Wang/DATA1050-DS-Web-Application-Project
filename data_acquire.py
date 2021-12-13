@@ -7,7 +7,8 @@ from io import StringIO
 
 # import utils
 # import database
-from database import create_connection, read_tables, select_count_from_table, repopulate_table_complete, \
+
+from database import create_connection, read_tables, select_count_from_table, repopulate_table_complete, update_table, \
                      DB_STATUS_CODES, DB_LIMIT
 from data_ETL import read_csv
 
@@ -30,7 +31,10 @@ def db_health_check(connection, verbose=False):
         print("covidistorical not good")
         health_status = health_status | DB_STATUS_CODES['Missing historical table']
     
-    print(f"Historical count: {select_count_from_table(connection, 'covidhistorical').iloc[0]['count']}")
+    if ('covidhistorical' in tables):
+        print(f"Historical count: {select_count_from_table(connection, 'covidhistorical').iloc[0]['count']}")
+    else:
+        print("Historical table DNE")
     print("Ending db_health_check")
     return health_status
 
@@ -65,24 +69,38 @@ def initial_db_setup(connection, df_covid_total, df_hist_total, health_status, v
 def incremental_update(connection, verbose=False):
     # Updates **only** the covid table incrementally
     df_covid_total = read_csv('covid')
-    # repopulate_table_complete(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
-    @TODO:
     update_table(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
+    print("Completed an incremental update")
+#     repopulate_table_complete(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
 
+
+
+MAX_LOOPS = 3
+GLOBAL_COUNT=0
 
 def main_loop(connection, timeout=TIMEOUT_PERIOD, verbose=False):
     scheduler = sched.scheduler(time.time, time.sleep)
 
     def _worker():
+        global MAX_LOOPS, GLOBAL_COUNT
+        print(f"MAXLOOPS: {MAX_LOOPS}; GLOBAL_COUNT: {GLOBAL_COUNT}")
+        if GLOBAL_COUNT >= MAX_LOOPS:
+            print("DONE")
+            return 0
         try:
             print("About to update")
             incremental_update(connection, verbose=verbose)
+            print("incrementing global count")
+            GLOBAL_COUNT+=1
         except Exception as e:
-            logger.warning("main loop worker ignores exception and continues: {}".format(e))
+            print(f"Main loop worker ignores exception and continues: {e}")
+            # logger.warning("main loop worker ignores exception and continues: {}".format(e))
+            
+        print("Scheduling next event")
         scheduler.enter(timeout, 1, _worker)    # schedule the next event
 
     scheduler.enter(0, 1, _worker)              # start the first event
-    scheduler.run(blocking=True)
+    scheduler.run(blocking=True) #@TODO: change to true
 
 
 if __name__ == '__main__':
@@ -101,3 +119,5 @@ if __name__ == '__main__':
     print("Finished Initial Setup")
 
     main_loop(connection, verbose=True)
+
+    connection.close() # Won't be hit when fully running

@@ -9,7 +9,7 @@ from data_ETL import *
 
 RESULT_CACHE_EXPIRATION = 24 * 3600 # seconds; 24 hours
 
-DB_LIMIT = 8000 # max num of rows*0.9
+DB_LIMIT = 9000 # max num of rows*0.9
 
 TABLE_NAMES = ['covid', 'covidhistorical']
 
@@ -106,7 +106,7 @@ def create_table(connection, df_total, table_name, verbose=False):
 def repopulate_table_complete(connection, df_total, table_name, feat_to_limit='date', sort=True, limit=DB_LIMIT, verbose=False):
     print("In repopulate table complete")
     # Remove 'overly null' rows and columns
-    df_clean = clean_null_data(df_total, verbose=verbose)
+    df_clean = clean_null_data(df_total, verbose=verbose) # Should do nothing to 'latest covid' data
     print("CLEANED DATA")
     if sort:
         df_clean.sort_values(by=feat_to_limit, inplace=True)
@@ -142,7 +142,11 @@ def repopulate_table_complete(connection, df_total, table_name, feat_to_limit='d
     return DB_STATUS_CODES['Success']
 
 
+#@TODO: MUST follow columns of existing table (otherwise inserts leave last columns as NULL)
+## OPTION 1: Don't clean data, leave it at 67 columns 
+## OPTION 2: Read column names from current table with res.description(), insert <-- Current implementation
 def update_table(connection, df_total, table_name, feat_to_limit='date', sort=True, limit=DB_LIMIT, verbose=False):
+    # @TODO: Only should be run for 'covid' table for now
     df_db = get_covid(connection, table_name)
 
     # Combining latest data w data from database
@@ -154,22 +158,23 @@ def update_table(connection, df_total, table_name, feat_to_limit='date', sort=Tr
     # recent_mask = df_full['last_updated_date'].isin(unique_dates[-2:])
 
     ## OPTION 2: Only keep most recent data per location:
-    df_combined = pd.concat([df_cov, df_cov_2], sort=False)
     df_combined.sort_values(by='last_updated_date', inplace=True)
     # Keep 'last' or most recent data, duplicates are by location and last_updated_date
-    df_updated = df_full.drop_duplicates(subset=['location', 'last_updated_date'], inplace=False, keep='last')
+    df_updated = df_combined.drop_duplicates(subset=['location', 'last_updated_date'], inplace=False, keep='last')
+    print(f"df_updated shape: {df_updated.shape}")
 
     ## @TODO: Remove all rows from db
     # ...
     dummy_date = "'000-00-00'"
     cursor = connection.cursor()
     try:
-        cursor.execute(f"DELETE FROM {table_name} WHERE last_updated_date > dummy_date")
+        cursor.execute(f"DELETE FROM {table_name} WHERE last_updated_date > {dummy_date}")
     except Exception as e:
         print(e)
         return DB_STATUS_CODES['Failure']
+    connection.commit()
     cursor.close()
-
+    
     # Insert back into db: don't have to clean for 'covid' table/dataset
     cursor = connection.cursor()
     for i in range(df_updated.shape[0]):
@@ -190,9 +195,13 @@ def update_table(connection, df_total, table_name, feat_to_limit='date', sort=Tr
             return DB_STATUS_CODES['Failure']
 
     connection.commit()
+    
+    cursor.execute("SELECT count(*) FROM covid;")
+    print("NEW COUNT IN COVID:")
+    print(cursor.fetchall())
+    
     cursor.close()
     return DB_STATUS_CODES['Success']
-
 
 
 def get_covid(connection, table_name):
@@ -203,7 +212,7 @@ def get_covid(connection, table_name):
             return _cached_historical_table['cache']
         else:
             raise NameError(f"{table_name} is not a valid table. The only available tables are: {TABLE_NAMES}.")
-            return -1
+            return DB_STATUS_CODES['Failure']
     except KeyError:
         pass
     

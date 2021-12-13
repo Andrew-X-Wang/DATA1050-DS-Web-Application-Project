@@ -2,7 +2,7 @@ import pandas as pd
 
 
 MISS_P_THRESH = 0.5
-DB_LIMIT = 8000 # max num of rows*0.9
+DB_LIMIT = 9000 # max num of rows*0.9
 
 tablename_to_csv_urls = {
     'covid': 'https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv',
