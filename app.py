@@ -9,17 +9,18 @@ import pandas.io.sql as sqlio
 import psycopg2
 from psycopg2 import OperationalError
 
+from database import *
+
 
 # ## READ COVID DATA FROM OWID REPO
 # @TODO: Comment out later
-latest_url = 'https://github.com/owid/covid-19-data/raw/master/public/data/latest/owid-covid-latest.csv'
-df_cov = pd.read_csv(latest_url)
-latest_feats = df_cov.columns
+# latest_url = 'https://github.com/owid/covid-19-data/raw/master/public/data/latest/owid-covid-latest.csv'
+# df_cov = pd.read_csv(latest_url)
+# latest_feats = df_cov.columns
 
-hist_url = 'https://covid.ourworldindata.org/data/owid-covid-data.csv'
-df_hist = pd.read_csv(hist_url)
-hist_feats = df_hist.columns
-
+# hist_url = 'https://covid.ourworldindata.org/data/owid-covid-data.csv'
+# df_hist = pd.read_csv(hist_url)
+# hist_feats = df_hist.columns
 
 
 ## Determining if feature is continuous
@@ -42,6 +43,8 @@ app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 # Define component functions
 def target_vis():
+    df_cov = get_covid('covid')
+
     return html.Div(children=[
         html.Div(children=[
             html.H2(children='Target Variable Visualization'),
@@ -59,6 +62,9 @@ def target_vis():
 
 
 def timeline_vis():
+    df_hist = get_covid('covidhistorical')
+    hist_feats = df_hist.columns
+
     return html.Div(children=[
         html.Div(children=[
             html.H2("Timeline"),
@@ -91,6 +97,9 @@ def timeline_vis():
 
 
 def history_compare():
+    df_hist = get_covid('covidhistorical')
+    hist_feats = df_hist.columns
+
     return html.Div(children=[
         html.Div(children=[
             html.H2("Historical Comparison"),
@@ -132,6 +141,7 @@ def dynamic_layout():
 
 
 # set layout to a function which updates upon reloading
+
 app.layout = dynamic_layout
 
 
@@ -143,6 +153,8 @@ app.layout = dynamic_layout
     dash.dependencies.Input('regressor_feature_dd', 'value')
 )
 def update_target_visualization(feature_name):
+    df_cov = get_covid('covid')
+
     # if feature_name != None:
     target_var = 'new_cases_smoothed'
     fig = None
@@ -180,6 +192,7 @@ def update_filter_val_options(filter_feat):
      dash.dependencies.Input('hist_filter_val_dd', 'value')]
 )
 def update_timeline_vis(plot_feature, filter_feature, filter_value):
+    df_hist = get_covid('covidhistorical')
     hist_time_feature = 'date' # can put in db_info
     hist_filter_mask = df_hist[filter_feature] == filter_value
     df_hist_filtered = df_hist[hist_filter_mask]
@@ -200,6 +213,9 @@ def update_timeline_vis(plot_feature, filter_feature, filter_value):
      dash.dependencies.Input('feats_to_compare_dd', 'value')]
 )
 def update_history_compare_vis(locations, hist_dates, features):
+    df_cov = get_covid('covid')
+    df_hist = get_covid('covid_historical')
+    
     # Date Mask
     dummy_date = '0000-01-01'
     hist_date_mask = df_hist['date'] == dummy_date # Should be all False

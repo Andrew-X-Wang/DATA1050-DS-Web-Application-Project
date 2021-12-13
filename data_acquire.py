@@ -1,6 +1,3 @@
-"""
-Bonneville Power Administration, United States Department of Energy
-"""
 import time
 import sched
 import pandas
@@ -9,21 +6,32 @@ import pandas
 from io import StringIO
 
 # import utils
-import database
-from database import *
+# import database
+from database import create_connection, read_tables, select_count_from_table, repopulate_table_complete, \
+                     DB_STATUS_CODES, DB_LIMIT
+from data_ETL import read_csv
 
 TIMEOUT_PERIOD = 10 # seconds
 
 def db_health_check(connection, verbose=False):
     health_status = DB_STATUS_CODES['Success']
     tables = read_tables(connection, verbose)
-    
+    print(tables)
+    print('covid' not in tables)
+    print(health_status)
+    print('covidhistorical' not in tables)
+    print("________")
+#     return tables
     if 'covid' not in tables:
+        print("covid not good")
         health_status = health_status | DB_STATUS_CODES['Missing covid table']
     # Complete repopulation of 'covidhistorical' table if DNE, or not enough data in it
     if ('covidhistorical' not in tables) or (select_count_from_table(connection, 'covidhistorical').iloc[0]['count'] < DB_LIMIT):
-        health_status = health_status | DB_STATUS_CODES['Missing both tables']
+        print("covidistorical not good")
+        health_status = health_status | DB_STATUS_CODES['Missing historical table']
     
+    print(f"Historical count: {select_count_from_table(connection, 'covidhistorical').iloc[0]['count']}")
+    print("Ending db_health_check")
     return health_status
 
 
@@ -31,18 +39,19 @@ def initial_db_setup(connection, df_covid_total, df_hist_total, health_status, v
     if health_status == DB_STATUS_CODES['Success']:
         return health_status
     
+    if health_status & DB_STATUS_CODES['Missing covid table']: # 1 if missing
+        repop_status = repopulate_table_complete(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
+        if repop_status == DB_STATUS_CODES['Failure']:
+            return repop_status
+
     if health_status & DB_STATUS_CODES['Missing historical table']: # 2 if missing
-        repop_status = repopulate_table_complete(connection, df_hist_total, 'covidhistorical', verbose)
+        print("In missing historical table intial_db_setup")
+        repop_status = repopulate_table_complete(connection, df_hist_total, 'covidhistorical', verbose=verbose)
         if select_count_from_table(connection, 'covidhistorical').iloc[0]['count'] < DB_LIMIT:
             if verbose:
                 print("CovidHistorical table failed to have enough rows populated.")
             repop_status = DB_STATUS_CODES['Failure']
 
-        if repop_status == DB_STATUS_CODES['Failure']:
-            return repop_status
-
-    if health_status & DB_STATUS_CODES['Missing covid table']: # 1 if missing
-        repopulate_table_complete(connection, df_covid_total, 'covid', verbose)
         if repop_status == DB_STATUS_CODES['Failure']:
             return repop_status
     
@@ -53,20 +62,21 @@ def initial_db_setup(connection, df_covid_total, df_hist_total, health_status, v
     return DB_STATUS_CODES['Success']
 
 
-def incremental_update(connection):
+def incremental_update(connection, verbose=False):
     # Updates **only** the covid table incrementally
     df_covid_total = read_csv('covid')
+    # repopulate_table_complete(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
+    @TODO:
+    update_table(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
 
-    repopulate_table_complete(connection, df_covid_total, 'covid')
 
-
-
-def main_loop(connection, timeout=TIMEOUT_PERIOD):
+def main_loop(connection, timeout=TIMEOUT_PERIOD, verbose=False):
     scheduler = sched.scheduler(time.time, time.sleep)
 
     def _worker():
         try:
-            incremental_update(connection)
+            print("About to update")
+            incremental_update(connection, verbose=verbose)
         except Exception as e:
             logger.warning("main loop worker ignores exception and continues: {}".format(e))
         scheduler.enter(timeout, 1, _worker)    # schedule the next event
@@ -84,12 +94,10 @@ if __name__ == '__main__':
     df_covid_total = read_csv('covid')
     df_hist_total = read_csv('covidhistorical')
 
-    db_health = db_health_check(connection)
+    db_health = db_health_check(connection, verbose=True)
     print(db_health)
+    initial_db_setup(connection, df_covid_total, df_hist_total, db_health, verbose=True)
     
-    ## @TODO: Initial DB Setup Not Working
-    # initial_db_setup(connection, df_covid_total, df_hist_total, db_health, verbose=True)
+    print("Finished Initial Setup")
 
-    # main_loop(connection)
-
-
+    main_loop(connection, verbose=True)
