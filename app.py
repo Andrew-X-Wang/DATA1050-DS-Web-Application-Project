@@ -12,17 +12,6 @@ from psycopg2 import OperationalError
 from database import *
 
 
-# ## READ COVID DATA FROM OWID REPO
-# @TODO: Comment out later
-# latest_url = 'https://github.com/owid/covid-19-data/raw/master/public/data/latest/owid-covid-latest.csv'
-# df_cov = pd.read_csv(latest_url)
-# latest_feats = df_cov.columns
-
-# hist_url = 'https://covid.ourworldindata.org/data/owid-covid-data.csv'
-# df_hist = pd.read_csv(hist_url)
-# hist_feats = df_hist.columns
-
-
 ## Determining if feature is continuous
 THRESH = 0.01
 def is_cont(data, cat_name):
@@ -219,6 +208,7 @@ def update_timeline_vis(plot_feature, filter_feature, filter_value):
     return fig
 
 
+# @TODO: some features don't work well here, due to concatenation bug: either remove features, or fix bug (ideally the former)
 # Updating Historical Comparison Visualization
 @app.callback(
     dash.dependencies.Output('hist_comparison_fig', 'figure'),
@@ -281,7 +271,7 @@ def update_history_compare_vis(locations, hist_dates, features):
         df_row = df_total[df_total['location']==loc]
         print("DF ROW")
         print(df_row)
-        rgb_i = [(c + signs[i, j] * i * 15)%256 for j, c in enumerate(rgb)]
+        rgb_i = [(c + signs[i, j] * i * 30)%256 for j, c in enumerate(rgb)]
         # if df_total.iloc[i]['date'] >= '2021-12-10' or df_total.iloc[i]['date'] == '2020-06-03': # @TODO: change latest date
         fig.add_trace(go.Bar(x=[df_row.feature, df_row.date],
                         y = df_row.feature_val,
