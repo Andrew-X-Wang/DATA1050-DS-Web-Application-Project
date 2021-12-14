@@ -54,11 +54,11 @@ def dataset():
         html.H4("The datasets used to generate these figures come from OWID:"),
         html.Div(children=[
             html.A("Latest Data:", className="links",
-                href='https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv')
+                href='https://github.com/owid/covid-19-data/blob/master/public/data/latest/owid-covid-latest.csv')
         ]),
         html.Div(children=[
             html.A("Historical Data", className="links",
-                href='https://covid.ourworldindata.org/data/owid-covid-data.csv')
+                href='https://ourworldindata.org/coronavirus')
         ])
     ])
 
@@ -206,6 +206,7 @@ def update_target_visualization(feature_name):
     return fig
 
 
+# @TODO: colors change everytime it updates, but it looks cool :)
 # Updating Historical Data Visualization
 @app.callback(
     [dash.dependencies.Output('hist_filter_val_dd', 'options'),
