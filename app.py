@@ -48,6 +48,21 @@ def page_description():
     ])
 
 
+def dataset():
+    return html.Div(children=[
+        html.H3("Dataset:"),
+        html.H4("The datasets used to generate these figures come from OWID:"),
+        html.Div(children=[
+            html.A("Latest Data:", className="links",
+                href='https://raw.githubusercontent.com/owid/covid-19-data/master/public/data/latest/owid-covid-latest.csv')
+        ]),
+        html.Div(children=[
+            html.A("Historical Data", className="links",
+                href='https://covid.ourworldindata.org/data/owid-covid-data.csv')
+        ])
+    ])
+
+
 # Define component functions
 def target_vis():
     global CONN
@@ -55,7 +70,7 @@ def target_vis():
 
     return html.Div(children=[
         html.Div(children=[
-            html.H2(children='Target Variable Visualization'),
+            html.H2(children='New Cases Visualization'),
             dcc.Dropdown(
                 id='regressor_feature_dd',
                 options=[{'label': col, 'value': col} for col in df_cov.columns],
@@ -152,6 +167,7 @@ def dynamic_layout():
     return html.Div([
         page_title(),
         page_description(),
+        dataset(),
         timeline_vis(),
         target_vis(),
         history_compare(),
@@ -178,7 +194,6 @@ def update_target_visualization(feature_name):
     target_var = 'new_cases_smoothed'
     fig = None
     if feature_name != target_var:
-        print("Changing target visualization")
         if is_cont(df_cov, feature_name):
             fig = px.scatter(df_cov, x=feature_name, y=target_var, 
                              title=f"Scatter {target_var} over {feature_name}")
@@ -186,7 +201,7 @@ def update_target_visualization(feature_name):
             fig = px.bar(df_cov, x = feature_name, y= target_var,
                          title=f"BoxPlot {target_var} over {feature_name}")
 
-    fig.update_layout(template='plotly_dark', title='Visualizing Target Variable for Latest Data',
+    fig.update_layout(template='plotly_dark', title='Visualizing New Cases for Latest Data',
                           plot_bgcolor='#23272c', paper_bgcolor='#23272c')
     return fig
 
@@ -279,8 +294,6 @@ def update_history_compare_vis(locations, hist_dates, features):
         df_new = df_compare.rename(columns={f:'feature_val'}).drop(feats_to_remove, axis=1)
         df_new['feature'] = f
         df_total = pd.concat([df_total, df_new])
-    
-    print(df_total.shape)
 
     # Creating figure
     fig = go.Figure()
@@ -290,9 +303,8 @@ def update_history_compare_vis(locations, hist_dates, features):
 
     for i, loc in enumerate(locations):
         df_row = df_total[df_total['location']==loc]
-        print("DF ROW")
-        print(df_row)
         rgb_i = [(c + signs[i, j] * i * 30)%256 for j, c in enumerate(rgb)]
+
         fig.add_trace(go.Bar(x=[df_row.feature, df_row.date],
                         y = df_row.feature_val,
                         marker_color=f'rgb({rgb_i[0]}, {rgb_i[1]}, {rgb_i[2]})', name=loc

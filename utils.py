@@ -1,5 +1,5 @@
 ## Determining if feature is continuous
-THRESH = 0.25
+THRESH = 0.001
 def is_cont(data, cat_name):
     print(data[cat_name].nunique() / data[cat_name].count())
     if cat_name == 'human_development_index':
