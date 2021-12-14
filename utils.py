@@ -1,17 +1,12 @@
-import sys
-import logging
-
-
-def setup_logger(logger, output_file):
-    logger.setLevel(logging.INFO)
-
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(logging.Formatter('%(asctime)s [%(funcName)s]: %(message)s'))
-    logger.addHandler(stdout_handler)
-
-    file_handler = logging.FileHandler(output_file)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s [%(funcName)s] %(message)s'))
-    logger.addHandler(file_handler)
-
-
-
+## Determining if feature is continuous
+THRESH = 0.25
+def is_cont(data, cat_name):
+    print(data[cat_name].nunique() / data[cat_name].count())
+    if cat_name == 'human_development_index':
+        print("Hello")
+    if data[cat_name].dtype != 'float64':
+        return False
+    if data[cat_name].nunique() / data[cat_name].count() < THRESH:
+        return False
+    return True
+    

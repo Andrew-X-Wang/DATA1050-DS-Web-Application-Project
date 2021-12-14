@@ -10,17 +10,8 @@ import psycopg2
 from psycopg2 import OperationalError
 
 from database import *
+from utils import *
 
-
-## Determining if feature is continuous
-THRESH = 0.01
-def is_cont(data, cat_name):
-    if data[cat_name].dtype != 'float64':
-        return False
-    if data[cat_name].nunique() / data[cat_name].count() < THRESH:
-        return False
-    return True
-    
 
 # Definitions of constants. This projects uses extra CSS stylesheet at `./assets/style.css`
 COLORS = ['rgb(67,67,67)', 'rgb(115,115,115)', 'rgb(49,130,189)', 'rgb(189,189,189)']
@@ -187,6 +178,7 @@ def update_target_visualization(feature_name):
     target_var = 'new_cases_smoothed'
     fig = None
     if feature_name != target_var:
+        print("Changing target visualization")
         if is_cont(df_cov, feature_name):
             fig = px.scatter(df_cov, x=feature_name, y=target_var, 
                              title=f"Scatter {target_var} over {feature_name}")
@@ -296,13 +288,11 @@ def update_history_compare_vis(locations, hist_dates, features):
     rgb=[55, 83, 109]
     signs = np.random.randint(3, size=(df_total.shape[0], 3))
 
-    # By location (@TODO: make location a dropdown option as well)
     for i, loc in enumerate(locations):
         df_row = df_total[df_total['location']==loc]
         print("DF ROW")
         print(df_row)
         rgb_i = [(c + signs[i, j] * i * 30)%256 for j, c in enumerate(rgb)]
-        # if df_total.iloc[i]['date'] >= '2021-12-10' or df_total.iloc[i]['date'] == '2020-06-03': # @TODO: change latest date
         fig.add_trace(go.Bar(x=[df_row.feature, df_row.date],
                         y = df_row.feature_val,
                         marker_color=f'rgb({rgb_i[0]}, {rgb_i[1]}, {rgb_i[2]})', name=loc
