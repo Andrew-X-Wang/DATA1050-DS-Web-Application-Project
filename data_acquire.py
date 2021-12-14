@@ -12,7 +12,7 @@ from database import create_connection, read_tables, select_count_from_table, re
                      DB_STATUS_CODES, DB_LIMIT
 from data_ETL import read_csv
 
-TIMEOUT_PERIOD = 10 # seconds
+TIMEOUT_PERIOD = 60 * 60 * 24 # 24 hours
 
 def db_health_check(connection, verbose=False):
     health_status = DB_STATUS_CODES['Success']
@@ -90,8 +90,9 @@ def main_loop(connection, timeout=TIMEOUT_PERIOD, verbose=False):
         try:
             print("About to update")
             incremental_update(connection, verbose=verbose)
-            print("incrementing global count")
-            GLOBAL_COUNT+=1
+            # Taking out the incrementation means it runs indefinitely
+            # print("incrementing global count")
+            # GLOBAL_COUNT+=1
         except Exception as e:
             print(f"Main loop worker ignores exception and continues: {e}")
             # logger.warning("main loop worker ignores exception and continues: {}".format(e))
