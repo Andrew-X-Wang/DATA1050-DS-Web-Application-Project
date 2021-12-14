@@ -30,6 +30,33 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css', '/assets/s
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 
+def page_title():
+     return html.Div(children=[
+         html.H1("Covid-19 Dashboard")
+     ])
+
+
+def page_description():
+    return html.Div(children=[
+        html.H3("Team Members:"),
+        html.H5("Mark Adut, Aryaman Dutta, Emre Toner, Andrew Wang"),
+        html.H2("Project Description:"),
+        html.H5(
+            "In this project, we used Heroku to store a relational database of COVID-19 \
+            data sourced from the Center for Systems Science and Engineering (CSSE) at \
+            Johns Hopkins University (JHU). The data was acquired in raw form from the JHU \
+            github, from which a CSV was sourced and subsequently interfaced with pyscopg2 \
+            to create and store the data in an SQL relation. This data is continually updated \
+            on a daily basis to reflect the current state of the covid-19 pandemic across the \
+            world. There were two separate data frames that were sourced from JHU. The first \
+            dataframe was the historical dataframe, which contained information on the covid \
+            metrics since the beginning of the pandemic but not including the latest update. \
+            The second data frame was the updated-daily ( incremental update every 24 hrs) \
+            data frame which contained raw data on the daily updates of covid metrics. "
+        )
+    ])
+
+
 # Define component functions
 def target_vis():
     global CONN
@@ -130,7 +157,10 @@ def dynamic_layout():
         "dcegl8mv856qb8", "ndvqpnrwxtmwvu", "eec515b7f7a6c5c44d4df10499aa344d698310c1b39474bd2aefca27633fb241", "ec2-3-89-214-80.compute-1.amazonaws.com", "5432"
     )
 
+    # The HTML Layout
     return html.Div([
+        page_title(),
+        page_description(),
         timeline_vis(),
         target_vis(),
         history_compare(),
