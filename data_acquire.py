@@ -17,25 +17,20 @@ TIMEOUT_PERIOD = 60 * 60 * 24 # 24 hours
 def db_health_check(connection, verbose=False):
     health_status = DB_STATUS_CODES['Success']
     tables = read_tables(connection, verbose)
-    print(tables)
-    print('covid' not in tables)
-    print(health_status)
-    print('covidhistorical' not in tables)
-    print("________")
-#     return tables
     if 'covid' not in tables:
-        print("covid not good")
+        if verbose:
+            print("covid table does not exist.")
         health_status = health_status | DB_STATUS_CODES['Missing covid table']
     # Complete repopulation of 'covidhistorical' table if DNE, or not enough data in it
     if ('covidhistorical' not in tables) or (select_count_from_table(connection, 'covidhistorical').iloc[0]['count'] < DB_LIMIT):
-        print("covidistorical not good")
+        if verbose:
+            print("covidhistorical table does not exist")
         health_status = health_status | DB_STATUS_CODES['Missing historical table']
     
-    if ('covidhistorical' in tables):
-        print(f"Historical count: {select_count_from_table(connection, 'covidhistorical').iloc[0]['count']}")
-    else:
-        print("Historical table DNE")
-    print("Ending db_health_check")
+    if verbose:
+        if ('covidhistorical' in tables):
+            print(f"Historical count: {select_count_from_table(connection, 'covidhistorical').iloc[0]['count']}")
+
     return health_status
 
 
@@ -49,7 +44,6 @@ def initial_db_setup(connection, df_covid_total, df_hist_total, health_status, v
             return repop_status
 
     if health_status & DB_STATUS_CODES['Missing historical table']: # 2 if missing
-        print("In missing historical table intial_db_setup")
         repop_status = repopulate_table_complete(connection, df_hist_total, 'covidhistorical', verbose=verbose)
         if select_count_from_table(connection, 'covidhistorical').iloc[0]['count'] < DB_LIMIT:
             if verbose:
@@ -70,9 +64,8 @@ def incremental_update(connection, verbose=False):
     # Updates **only** the covid table incrementally
     df_covid_total = read_csv('covid')
     update_table(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
-    print("Completed an incremental update")
-#     repopulate_table_complete(connection, df_covid_total, 'covid', sort=False, verbose=verbose)
-
+    if verbose:
+        print("Incremental Update Completed")
 
 
 MAX_LOOPS = 3
@@ -83,9 +76,8 @@ def main_loop(connection, timeout=TIMEOUT_PERIOD, verbose=False):
 
     def _worker():
         global MAX_LOOPS, GLOBAL_COUNT
-        print(f"MAXLOOPS: {MAX_LOOPS}; GLOBAL_COUNT: {GLOBAL_COUNT}")
         if GLOBAL_COUNT >= MAX_LOOPS:
-            print("DONE")
+            print("Incremental Updates Complete. Ending main loop.")
             return 0
         try:
             print("About to update")
@@ -95,13 +87,11 @@ def main_loop(connection, timeout=TIMEOUT_PERIOD, verbose=False):
             # GLOBAL_COUNT+=1
         except Exception as e:
             print(f"Main loop worker ignores exception and continues: {e}")
-            # logger.warning("main loop worker ignores exception and continues: {}".format(e))
             
-        print("Scheduling next event")
         scheduler.enter(timeout, 1, _worker)    # schedule the next event
 
     scheduler.enter(0, 1, _worker)              # start the first event
-    scheduler.run(blocking=True) #@TODO: change to true
+    scheduler.run(blocking=True)
 
 
 if __name__ == '__main__':
@@ -109,16 +99,18 @@ if __name__ == '__main__':
     connection = create_connection(
         "dcegl8mv856qb8", "ndvqpnrwxtmwvu", "eec515b7f7a6c5c44d4df10499aa344d698310c1b39474bd2aefca27633fb241", "ec2-3-89-214-80.compute-1.amazonaws.com", "5432"
     )
+    verbose = False
 
     df_covid_total = read_csv('covid')
     df_hist_total = read_csv('covidhistorical')
 
-    db_health = db_health_check(connection, verbose=True)
-    print(db_health)
-    initial_db_setup(connection, df_covid_total, df_hist_total, db_health, verbose=True)
-    
-    print("Finished Initial Setup")
+    db_health = db_health_check(connection, verbose=verbose)
+    if verbose:
+        print("Database health: {DB_CODE_TOSTRING[db_health]}")
+    initial_db_setup(connection, df_covid_total, df_hist_total, db_health, verbose=verbose)
+    if verbose:
+        print("Initial Setup Complete")
 
-    main_loop(connection, verbose=True)
+    main_loop(connection, verbose=verbose)
 
     connection.close() # Won't be hit when fully running

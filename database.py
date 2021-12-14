@@ -21,6 +21,10 @@ DB_STATUS_CODES = {
     'Missing both tables': 3
 }
 
+DB_CODE_TOSTRING = {
+    DB_STATUS_CODES[key]: key for key in DB_STATUS_CODES.keys()
+}
+
 def create_connection(db_name, db_user, db_password, db_host, db_port):
     connection = None
     try:
@@ -39,19 +43,19 @@ def create_connection(db_name, db_user, db_password, db_host, db_port):
 
 def read_tables(connection, verbose=False):
     #show all tables in db 
-    print("IN READ TABLES")
     cursor = connection.cursor()
     cursor.execute("select relname from pg_class where relkind='r' and relname !~ '^(pg_|sql_)';")
     res = cursor.fetchall()
-    print("CURSOR EXECUTED READ TABLES")
 
     # Formatting: original eg. [('covid',), ('covidhistorical',)]
     res = [r[0] for r in res]
 
     if verbose:
+        print("Read_tables result:")
         print(res)
 
     cursor.close()
+
     return res
 
 
@@ -65,6 +69,7 @@ def select_all_from_table(connection, table_name, verbose=False):
     df = pd.DataFrame(res, columns=columns)
     if verbose:
         print(df)
+
     return df
 
 
@@ -78,15 +83,17 @@ def select_count_from_table(connection, table_name, verbose=False):
     df = pd.DataFrame(res, columns=columns)
     if verbose:
         print(df)
+
     return df
 
 
 def create_table(connection, df_total, table_name, verbose=False):
     cursor = connection.cursor()
-    print(f"CURSOR CREATED for {table_name}")
     try:
         cursor.execute(f"DROP TABLE IF EXISTS {table_name};")
-        print("TABLE DROPPED")
+        if verbose:
+            print(f"Dropped table: {table_name}.")
+
         create_table_query = f"CREATE TABLE {table_name} ("
         features_types = [col + (" double precision" if df_total.dtypes[i] == 'float' else " varchar(60)") for i, col in enumerate(df_total.columns)]
         create_table_query += ", ".join(features_types) + ");"
@@ -98,16 +105,16 @@ def create_table(connection, df_total, table_name, verbose=False):
     
     connection.commit()
     if verbose:
-        print(f"Successfully created table {table_name}.")
+        print(f"Created table: {table_name}.")
+
     cursor.close()
+
     return DB_STATUS_CODES['Success']
 
 
 def repopulate_table_complete(connection, df_total, table_name, feat_to_limit='date', sort=True, limit=DB_LIMIT, verbose=False):
-    print("In repopulate table complete")
     # Remove 'overly null' rows and columns
     df_clean = clean_null_data(df_total, verbose=verbose) # Should do nothing to 'latest covid' data
-    print("CLEANED DATA")
     if sort:
         df_clean.sort_values(by=feat_to_limit, inplace=True)
     # Limit to 9000 rows
@@ -125,8 +132,6 @@ def repopulate_table_complete(connection, df_total, table_name, feat_to_limit='d
             if i % 100 == 0:
                 print(f"Inserting row {i}.")
         row_list = df_clean.iloc[i].tolist()
-#         str_row = [str(f) for f in row_list]
-#         str_row = ["NULL" if s == 'nan' else s for s in str_row]
         str_placeholders = ['%s' for i in df_clean.columns]
         insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(str_placeholders)})"
     
@@ -138,7 +143,11 @@ def repopulate_table_complete(connection, df_total, table_name, feat_to_limit='d
             return DB_STATUS_CODES['Failure']
 
     connection.commit()
+    if verbose:
+        print(f"Repopulated table {table_name}.")
+
     cursor.close()
+
     return DB_STATUS_CODES['Success']
 
 
@@ -146,7 +155,7 @@ def repopulate_table_complete(connection, df_total, table_name, feat_to_limit='d
 ## OPTION 1: Don't clean data, leave it at 67 columns 
 ## OPTION 2: Read column names from current table with res.description(), insert <-- Current implementation
 def update_table(connection, df_total, table_name, feat_to_limit='date', sort=True, limit=DB_LIMIT, verbose=False):
-    # @TODO: Only should be run for 'covid' table for now
+    # Only should be run for 'covid' table #@TODO: for now
     df_db = get_covid(connection, table_name)
 
     # Combining latest data w data from database
@@ -161,10 +170,11 @@ def update_table(connection, df_total, table_name, feat_to_limit='date', sort=Tr
     df_combined.sort_values(by='last_updated_date', inplace=True)
     # Keep 'last' or most recent data, duplicates are by location and last_updated_date
     df_updated = df_combined.drop_duplicates(subset=['location', 'last_updated_date'], inplace=False, keep='last')
-    print(f"df_updated shape: {df_updated.shape}")
 
-    ## @TODO: Remove all rows from db
-    # ...
+    if verbose:
+        print(f"DF updated shape: {df_updated.shape}")
+
+    ## Remove all rows from db
     dummy_date = "'000-00-00'"
     cursor = connection.cursor()
     try:
@@ -174,16 +184,18 @@ def update_table(connection, df_total, table_name, feat_to_limit='date', sort=Tr
         return DB_STATUS_CODES['Failure']
     connection.commit()
     cursor.close()
+
+    if verbose:
+        print(f"Removed all rows from table: {table_name}.")
     
     # Insert back into db: don't have to clean for 'covid' table/dataset
+    # @TODO: refactor into separate function
     cursor = connection.cursor()
     for i in range(df_updated.shape[0]):
         if verbose:
             if i % 100 == 0:
                 print(f"Inserting row {i}.")
         row_list = df_updated.iloc[i].tolist()
-#         str_row = [str(f) for f in row_list]
-#         str_row = ["NULL" if s == 'nan' else s for s in str_row]
         str_placeholders = ['%s' for i in df_updated.columns]
         insert_p1 = f"INSERT INTO {table_name} VALUES ({', '.join(str_placeholders)})"
     
@@ -196,11 +208,13 @@ def update_table(connection, df_total, table_name, feat_to_limit='date', sort=Tr
 
     connection.commit()
     
-    cursor.execute("SELECT count(*) FROM covid;")
-    print("NEW COUNT IN COVID:")
-    print(cursor.fetchall())
+    if verbose:
+        cursor.execute("SELECT count(*) FROM covid;")
+        print(f"Finished inserting rows for update. New count in {table_name}:")
+        print(cursor.fetchall())
     
     cursor.close()
+    
     return DB_STATUS_CODES['Success']
 
 
